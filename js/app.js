@@ -1023,4 +1023,55 @@ function log(msg, type = '') {
 
 
 // Bootstrap
+
+function initMobileMenu() {
+    const menuBtn = document.getElementById('mobile-menu-btn');
+    const solverSidebar = document.getElementById('sidebar-solver');
+    const puzzleSidebar = document.getElementById('sidebar-puzzle');
+    const overlay = document.getElementById('mobile-overlay');
+    const paletteBtn = document.getElementById('palette-btn');
+
+    if (menuBtn && solverSidebar && overlay) {
+        // Toggle Left Sidebar
+        menuBtn.addEventListener('click', () => {
+            solverSidebar.classList.toggle('mobile-visible');
+            overlay.classList.toggle('active');
+            // Close right sidebar if open
+            if (puzzleSidebar && !puzzleSidebar.classList.contains('hidden')) {
+                puzzleSidebar.classList.add('hidden');
+            }
+        });
+
+        // Close everything when clicking overlay
+        overlay.addEventListener('click', () => {
+            solverSidebar.classList.remove('mobile-visible');
+            if (puzzleSidebar) puzzleSidebar.classList.add('hidden');
+            overlay.classList.remove('active');
+        });
+    }
+
+    // Ensure Palette Button also toggles overlay on mobile
+    if (paletteBtn && overlay) {
+        paletteBtn.addEventListener('click', () => {
+            // Check if we are in mobile view (simple check)
+            if (window.innerWidth <= 768) {
+                // The main logic toggles the sidebar class. We just need to sync the overlay.
+                // Since this runs AFTER the main listener (assuming main listener is attached in init()),
+                // we can check the state of the sidebar.
+                // Actually, let's just toggle the overlay based on the sidebar state.
+                setTimeout(() => {
+                    if (puzzleSidebar && !puzzleSidebar.classList.contains('hidden')) {
+                        overlay.classList.add('active');
+                        solverSidebar.classList.remove('mobile-visible'); // Close left if open
+                    } else {
+                        overlay.classList.remove('active');
+                    }
+                }, 10);
+            }
+        });
+    }
+}
+
+// Bootstrap
+initMobileMenu();
 init();

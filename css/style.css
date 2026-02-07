@@ -424,3 +424,155 @@ canvas {
 .overlay-msg.visible {
     opacity: 1;
 }
+
+/* --- Mobile Optimization --- */
+
+/* Menu Toggle Button (Visible only on Mobile) */
+#mobile-menu-btn {
+    display: none;
+    font-size: 1.8rem;
+    background: none;
+    border: none;
+    color: var(--text-color);
+    cursor: pointer;
+    padding: 5px 15px;
+    margin-right: 10px;
+    position: absolute;
+    left: 10px;
+    top: 15px;
+    z-index: 20;
+}
+
+/* Overlay back-drop for mobile drawers */
+#mobile-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 999;
+    display: none;
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+#mobile-overlay.active {
+    display: block;
+    opacity: 1;
+}
+
+@media (max-width: 768px) {
+
+    /* Layout Stack */
+    .main-layout {
+        flex-direction: column;
+    }
+
+    /* Header Adjustments */
+    header {
+        padding: 4rem 1rem 1rem 1rem;
+        /* Top padding for menu btn */
+        flex-wrap: wrap;
+        gap: 10px;
+        height: auto;
+        justify-content: center;
+    }
+
+    h1 {
+        font-size: 1.4rem;
+        flex: 1;
+        text-align: center;
+        width: 100%;
+        margin-bottom: 10px;
+    }
+
+    /* Show Menu Button */
+    #mobile-menu-btn {
+        display: block;
+    }
+
+    .header-controls {
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+        width: 100%;
+    }
+
+    /* Resize large controls for mobile */
+    .control-select,
+    .control-input,
+    .icon-btn,
+    .mode-btn {
+        font-size: 1rem;
+        padding: 8px 12px;
+        height: auto;
+    }
+
+    .icon-btn {
+        width: 40px;
+        height: 40px;
+    }
+
+    .mode-switch {
+        margin: 5px 0;
+    }
+
+    /* Left Sidebar (Solver Controls) - Slide-in Drawer */
+    .sidebar-left {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100%;
+        width: 85%;
+        max-width: 320px;
+        background: rgba(30, 30, 30, 0.98);
+        backdrop-filter: blur(10px);
+        transform: translateX(-100%);
+        transition: transform 0.3s ease-in-out;
+        z-index: 1000;
+        box-shadow: 5px 0 15px rgba(0, 0, 0, 0.5);
+        padding-top: 60px;
+        /* Space for close btn if needed */
+    }
+
+    .sidebar-left.mobile-visible {
+        transform: translateX(0);
+    }
+
+    /* Right Sidebar (Palette) - Slide-in Drawer */
+    .sidebar-right {
+        position: fixed;
+        top: 0;
+        right: 0;
+        height: 100%;
+        width: 85%;
+        max-width: 320px;
+        background: rgba(30, 30, 30, 0.98);
+        border-left: none;
+        box-shadow: -5px 0 15px rgba(0, 0, 0, 0.5);
+        transform: translateX(100%);
+        /* Hidden to right */
+        z-index: 1001;
+    }
+
+    /* Override the 'hidden' class logic for mobile to use transform */
+    .sidebar-right.hidden {
+        width: 85% !important;
+        /* Keep width, just move it */
+        transform: translateX(100%);
+    }
+
+    .sidebar-right:not(.hidden) {
+        width: 85% !important;
+        transform: translateX(0);
+    }
+
+    /* Adjust Canvas */
+    .canvas-area {
+        width: 100%;
+        height: 100%;
+        /* Prevent pull-to-refresh */
+        overscroll-behavior: none;
+    }
+}
