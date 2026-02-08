@@ -7,7 +7,10 @@ let currentAlgo = 'wfc', currentTopology = 'plane', activeTileSet = DATA.SETS['s
 let isMissionActive = false, missionStart = null, missionEnd = null, missionConnected = false;
 let cursorRow = 0, cursorCol = 0, historyStack = [], isRunning = false, isBacktracking = false, animationFrameId, speed = 70;
 let puzzleDirty = false, isSolved = false, backtrackCount = 0, isInfinite = false, lockedCells = new Set(), selectedRow = 0, selectedCol = 0;
+
 let rand = Math.random;
+let customSetsData = {}; // Stores custom sets to persist/save
+let creatorState = { tiles: [], currentEdgeColors: [0, 0, 0, 0], palette: 'standard', dragging: false };
 
 // DOM
 const canvas = document.getElementById('tilingCanvas');
@@ -21,6 +24,8 @@ function init() {
     const resizeObserver = new ResizeObserver(() => resizeCanvas());
     resizeObserver.observe(document.querySelector('.canvas-area'));
     initPalette();
+    initTileCreator();
+    loadCustomSets(); // Load saved custom sets
     bindEvents();
 }
 
@@ -48,6 +53,8 @@ function bindEvents() {
     document.getElementById('mode-puzzle').onclick = () => setMode('puzzle');
     document.getElementById('speed-slider').oninput = (e) => speed = e.target.value;
     document.getElementById('btn-reset-weights').onclick = () => initWeights(currentSetKey);
+    document.getElementById('btn-custom-tile').onclick = () => openTileCreator();
+    document.getElementById('btn-edit-set').onclick = editCustomSet;
 
     canvas.addEventListener('mousedown', handleCanvasClick);
 }
@@ -208,11 +215,31 @@ function changeGridSize(val) {
 function changeTileSet(newSetKey) {
     currentSetKey = newSetKey;
     activeTileSet = DATA.SETS[newSetKey];
-    if (newSetKey === 'terrain') activeColors = DATA.COLORS_TERRAIN;
-    else activeColors = DATA.COLORS_STD;
+    currentSetKey = newSetKey;
+    activeTileSet = DATA.SETS[newSetKey];
+    const meta = DATA.SET_METADATA[newSetKey];
+
+    if (meta && meta.palette) {
+        activeColors = meta.palette;
+    } else if (newSetKey === 'terrain') {
+        activeColors = DATA.COLORS_TERRAIN;
+    } else {
+        activeColors = DATA.COLORS_STD;
+    }
+
+    initWeights(newSetKey);
+    initPalette();
     initWeights(newSetKey);
     initPalette();
     resetGrid();
+
+    // Toggle Edit Button
+    const editBtn = document.getElementById('btn-edit-set');
+    if (customSetsData[newSetKey]) {
+        editBtn.style.display = 'flex';
+    } else {
+        editBtn.style.display = 'none';
+    }
 }
 
 function toggleMission() {
@@ -1075,3 +1102,282 @@ function initMobileMenu() {
 // Bootstrap
 initMobileMenu();
 init();
+// --- Custom Tile Creator Logic ---
+
+function initTileCreator() {
+    document.querySelector('.close-modal').onclick = closeTileCreator;
+    document.getElementById('cancel-custom-set-btn').onclick = closeTileCreator;
+    document.getElementById('add-tile-btn').onclick = addCreatorTile;
+    document.getElementById('save-custom-set-btn').onclick = saveCustomSet;
+    document.getElementById('custom-palette-select').onchange = (e) => {
+        creatorState.palette = e.target.value;
+        const controls = document.getElementById('custom-color-controls');
+        if (creatorState.palette === 'custom') {
+            controls.style.display = 'flex';
+            if (!creatorState.customColors || creatorState.customColors.length === 0) {
+                creatorState.customColors = ['#000000', '#ffffff'];
+            }
+        } else {
+            controls.style.display = 'none';
+        }
+        creatorState.selectedColorIdx = 0;
+        renderEdgePalette();
+        renderTileEditor();
+    };
+
+    document.getElementById('add-color-btn').addEventListener('click', () => {
+        const color = document.getElementById('custom-color-picker').value;
+        if (!creatorState.customColors.includes(color)) {
+            creatorState.customColors.push(color);
+            renderEdgePalette();
+        }
+    });
+
+    document.querySelectorAll('.tile-editor .edge').forEach((el) => {
+        el.onclick = (e) => {
+            const edgeIdx = parseInt(e.target.dataset.edge); // 0=Top, 1=Right, 2=Bottom, 3=Left
+            if (creatorState.selectedColorIdx === undefined) creatorState.selectedColorIdx = 0;
+
+            // Validate index against current palette size
+            const maxIdx = (creatorState.palette === 'custom') ? creatorState.customColors.length - 1 :
+                ((creatorState.palette === 'terrain') ? DATA.COLORS_TERRAIN.length - 1 : DATA.COLORS_STD.length - 1);
+
+            if (creatorState.selectedColorIdx > maxIdx) creatorState.selectedColorIdx = 0;
+
+            creatorState.currentEdgeColors[edgeIdx] = creatorState.selectedColorIdx;
+            renderTileEditor();
+        };
+    });
+}
+
+function openTileCreator(mode = 'new', existingData = null) {
+    document.getElementById('custom-tile-modal').classList.add('active');
+
+    if (mode === 'edit' && existingData) {
+        creatorState = {
+            tiles: JSON.parse(JSON.stringify(existingData.tiles)), // Deep copy
+            currentEdgeColors: [0, 0, 0, 0],
+            palette: existingData.paletteType || 'standard',
+            selectedColorIdx: 0,
+            customColors: existingData.customColors ? [...existingData.customColors] : ['#000000', '#ffffff']
+        };
+        document.getElementById('custom-set-name').value = existingData.meta.title;
+        document.getElementById('custom-palette-select').value = creatorState.palette;
+        // Trigger palette UI update
+        const controls = document.getElementById('custom-color-controls');
+        if (creatorState.palette === 'custom') {
+            controls.style.display = 'flex';
+        } else {
+            controls.style.display = 'none';
+        }
+    } else {
+        // New Mode
+        creatorState = {
+            tiles: [],
+            currentEdgeColors: [0, 0, 0, 0],
+            palette: 'standard',
+            selectedColorIdx: 0,
+            customColors: ['#000000', '#ffffff']
+        };
+        document.getElementById('custom-set-name').value = "MySet_" + Math.floor(Math.random() * 1000);
+        document.getElementById('custom-palette-select').value = 'standard';
+        document.getElementById('custom-color-controls').style.display = 'none';
+    }
+
+    renderEdgePalette();
+    renderTileEditor();
+    renderSetPreview();
+}
+
+function editCustomSet() {
+    if (!customSetsData[currentSetKey]) return;
+    openTileCreator('edit', customSetsData[currentSetKey]);
+}
+
+function closeTileCreator() {
+    document.getElementById('custom-tile-modal').classList.remove('active');
+}
+
+function renderEdgePalette() {
+    const container = document.getElementById('edge-palette');
+    container.innerHTML = '';
+
+    let colors;
+    if (creatorState.palette === 'custom') {
+        colors = creatorState.customColors;
+    } else {
+        colors = (creatorState.palette === 'terrain') ? DATA.COLORS_TERRAIN : DATA.COLORS_STD;
+    }
+
+    Object.keys(colors).forEach(idx => {
+        const swatch = document.createElement('div');
+        swatch.className = 'palette-swatch';
+        swatch.style.backgroundColor = colors[idx];
+        if (parseInt(idx) === creatorState.selectedColorIdx) swatch.classList.add('selected');
+        swatch.onclick = () => {
+            creatorState.selectedColorIdx = parseInt(idx);
+            renderEdgePalette();
+        };
+        container.appendChild(swatch);
+    });
+}
+
+function renderTileEditor() {
+    let colors;
+    if (creatorState.palette === 'custom') {
+        colors = creatorState.customColors;
+    } else {
+        colors = (creatorState.palette === 'terrain') ? DATA.COLORS_TERRAIN : DATA.COLORS_STD;
+    }
+    const edges = document.querySelectorAll('.tile-editor .edge');
+    edges[0].style.backgroundColor = colors[creatorState.currentEdgeColors[0]]; // Top
+    edges[1].style.backgroundColor = colors[creatorState.currentEdgeColors[1]]; // Right
+    edges[2].style.backgroundColor = colors[creatorState.currentEdgeColors[2]]; // Bottom
+    edges[3].style.backgroundColor = colors[creatorState.currentEdgeColors[3]]; // Left
+
+    // Center preview
+    const center = document.querySelector('.center-preview');
+    center.style.background = `conic-gradient(
+        ${colors[creatorState.currentEdgeColors[0]]} 45deg 135deg, 
+        ${colors[creatorState.currentEdgeColors[1]]} 135deg 225deg, 
+        ${colors[creatorState.currentEdgeColors[2]]} 225deg 315deg, 
+        ${colors[creatorState.currentEdgeColors[3]]} 315deg 45deg
+    )`;
+    // Actually conic gradient is a bit tricky for the X shape. 
+    // Let's just use a simple radial or small box for now.
+    center.style.background = "#222";
+
+    // Draw visual lines for classic look
+    center.innerHTML = '';
+    // SVG or manual html?
+    // Let's skip complex center rendering for editor, the edges are enough.
+}
+
+function addCreatorTile() {
+    // Clone array
+    creatorState.tiles.push([...creatorState.currentEdgeColors]);
+    renderSetPreview();
+}
+
+function removeCreatorTile(idx) {
+    creatorState.tiles.splice(idx, 1);
+    renderSetPreview();
+}
+
+function renderSetPreview() {
+    const container = document.getElementById('custom-set-preview');
+    container.innerHTML = '';
+    document.getElementById('preview-count').innerText = creatorState.tiles.length;
+
+    const colors = (creatorState.palette === 'custom') ? creatorState.customColors :
+        ((creatorState.palette === 'terrain') ? DATA.COLORS_TERRAIN : DATA.COLORS_STD);
+
+    creatorState.tiles.forEach((tile, i) => {
+        const item = document.createElement('div');
+        item.className = 'preview-tile-item';
+
+        const removeBtn = document.createElement('div');
+        removeBtn.className = 'remove-tile';
+        removeBtn.innerText = '×';
+        removeBtn.onclick = (e) => { e.stopPropagation(); removeCreatorTile(i); };
+        item.appendChild(removeBtn);
+
+        // Mini canvas
+        const cvs = document.createElement('canvas');
+        cvs.width = 50; cvs.height = 50;
+        const c = cvs.getContext('2d');
+
+        // Simple draw
+        const size = 50;
+        const cx = 25, cy = 25;
+        c.fillStyle = colors[tile[0]]; c.beginPath(); c.moveTo(0, 0); c.lineTo(50, 0); c.lineTo(25, 25); c.fill();
+        c.fillStyle = colors[tile[1]]; c.beginPath(); c.moveTo(50, 0); c.lineTo(50, 50); c.lineTo(25, 25); c.fill();
+        c.fillStyle = colors[tile[2]]; c.beginPath(); c.moveTo(50, 50); c.lineTo(0, 50); c.lineTo(25, 25); c.fill();
+        c.fillStyle = colors[tile[3]]; c.beginPath(); c.moveTo(0, 50); c.lineTo(0, 0); c.lineTo(25, 25); c.fill();
+
+        item.appendChild(cvs);
+        container.appendChild(item);
+    });
+}
+
+function saveCustomSet() {
+    const name = document.getElementById('custom-set-name').value.trim() || 'Custom Set';
+    if (creatorState.tiles.length === 0) {
+        alert("Please add at least one tile.");
+        return;
+    }
+
+    // sanitize name key
+    const safeKey = name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+
+    // Check collision?
+    if (DATA.SETS[safeKey]) {
+        if (!confirm(`Set '${name}' already exists. Overwrite?`)) return;
+    }
+
+    // Save to DATA
+    DATA.SETS[safeKey] = creatorState.tiles;
+    DATA.SET_METADATA[safeKey] = {
+        title: name,
+        count: (creatorState.palette === 'custom') ? creatorState.customColors.length : 5,
+        labels: (creatorState.palette === 'terrain') ? DATA.COLOR_NAMES_TERRAIN : null,
+        palette: (creatorState.palette === 'custom') ? [...creatorState.customColors] : null
+    };
+
+    // Save to local customSetsData
+    customSetsData[safeKey] = {
+        tiles: creatorState.tiles,
+        meta: DATA.SET_METADATA[safeKey],
+        paletteType: creatorState.palette,
+        customColors: (creatorState.palette === 'custom') ? creatorState.customColors : null
+    };
+
+    // DOM: Save to LocalStorage
+    localStorage.setItem('wang_custom_sets', JSON.stringify(customSetsData));
+
+    // Update Dropdown
+    const optGroup = document.getElementById('custom-sets-optgroup');
+    let opt = optGroup.querySelector(`option[value="${safeKey}"]`);
+    if (!opt) {
+        opt = document.createElement('option');
+        opt.value = safeKey;
+        opt.innerText = name;
+        optGroup.appendChild(opt);
+    }
+
+    // Select the new option
+    document.getElementById('tile-set-select').value = safeKey;
+    changeTileSet(safeKey);
+
+    closeTileCreator();
+    log(`Custom set '${name}' saved and activated.`, 'success');
+}
+
+function loadCustomSets() {
+    try {
+        const stored = localStorage.getItem('wang_custom_sets');
+        if (stored) {
+            customSetsData = JSON.parse(stored);
+            const optGroup = document.getElementById('custom-sets-optgroup');
+            optGroup.innerHTML = ''; // Clear current
+
+            Object.entries(customSetsData).forEach(([key, data]) => {
+                // Restore to run-time DATA
+                DATA.SETS[key] = data.tiles;
+                DATA.SET_METADATA[key] = data.meta;
+
+                // Add to dropdown
+                const opt = document.createElement('option');
+                opt.value = key;
+                opt.innerText = data.meta.title;
+                optGroup.appendChild(opt);
+            });
+            if (Object.keys(customSetsData).length > 0) {
+                log(`Loaded ${Object.keys(customSetsData).length} custom sets.`, 'info');
+            }
+        }
+    } catch (e) {
+        console.error("Failed to load custom sets:", e);
+        log("Error loading custom sets.", 'error');
+    }
+}
