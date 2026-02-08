@@ -38,6 +38,7 @@ This document serves as a comprehensive overview of the current feature set and 
     - **Terrain**: Map-like generation with Water, Sand, Grass, Forest, Mountain. [Status: Completed - 02-07-2026 12:07:56]
     - **Aperiodic**: Special tile set designed to avoid repeating patterns. [Status: Completed - 02-07-2026 12:07:56]
 - **Biome Weights**: Fine-tune the probability of specific colors, terrains, or components appearing in the generation. [Status: Completed - 02-07-2026 12:07:56]
+- **Custom Tile Creator**: Full in-app editor to design custom tile sets. Features include Nested Dropdowns, Custom RGB Color Picker, and Edit Capability. [Status: Completed - 02-08-2026 14:30:00]
 
 ### Persistence
 - **Save/Load System**: Export the entire grid state and configuration to a JSON file and reload it later to resume work. [Status: Completed - 02-07-2026 12:07:56]
@@ -52,7 +53,7 @@ This document serves as a comprehensive overview of the current feature set and 
 
 *Use this section to track planned features, ideas, and upcoming improvements.*
 
-- [ ] **Custom Tile Creator**: In-app editor to design custom tile edge constraints and colors.
+
 - [ ] **Heuristic Improvements**: Advanced variable ordering (e.g., Min-Conflicts) for even faster WFC convergence.
 - [ ] **3D Layering**: Multi-layer grid support (3D Wang Cubes).
 - [ ] **Export to OBJ/GLTF**: Export the generated 3D mesh for use in other 3D software.

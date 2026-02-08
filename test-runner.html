@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <title>Wang Tiling Lab - Test Runner</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            background: #1a1a1a;
+            color: #eee;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .controls {
+            background: #333;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            background: #007bff;
+            color: white;
+            cursor: pointer;
+            font-size: 1rem;
+        }
+
+        button:hover {
+            background: #0056b3;
+        }
+
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .card {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 8px;
+        }
+
+        h1,
+        h2 {
+            margin-top: 0;
+        }
+
+        pre {
+            background: #111;
+            padding: 10px;
+            border-radius: 4px;
+            overflow: auto;
+            max-height: 300px;
+        }
+
+        input,
+        select {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #555;
+            background: #222;
+            color: white;
+        }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+
+<body>
+    <div class="container">
+        <h1>🧪 Heuristic Benchmarks</h1>
+
+        <div class="controls">
+            <div>
+                <label>Grid Size:</label>
+                <input type="number" id="gridSize" value="10" min="5" max="50">
+            </div>
+            <div>
+                <label>Iterations:</label>
+                <input type="number" id="iterations" value="100" min="10" max="1000">
+            </div>
+            <button id="runBtn">Run Benchmark</button>
+            <button id="downloadBtn" disabled>Download JSON</button>
+        </div>
+
+        <div class="grid">
+            <div class="card">
+                <h2>Execution Time (ms)</h2>
+                <canvas id="timeChart"></canvas>
+            </div>
+            <div class="card">
+                <h2>Success Rate (%)</h2>
+                <canvas id="successChart"></canvas>
+            </div>
+        </div>
+
+        <div class="card" style="margin-top: 20px;">
+            <h2>Raw Results</h2>
+            <pre id="outputLog">Ready to run.</pre>
+        </div>
+    </div>
+
+    <!-- Modules -->
+    <script type="module">
+        import { Benchmark } from './js/tests.js';
+
+        let chartTime = null;
+        let chartSuccess = null;
+        let lastResults = null;
+
+        document.getElementById('runBtn').onclick = async () => {
+            const btn = document.getElementById('runBtn');
+            const size = parseInt(document.getElementById('gridSize').value);
+            const iter = parseInt(document.getElementById('iterations').value);
+
+            btn.disabled = true;
+            btn.innerText = "Running...";
+            document.getElementById('outputLog').innerText = "Running benchmark...\n";
+
+            try {
+                const bench = new Benchmark();
+                const results = await bench.runBatch(iter, size, 'circuit'); // Using circuit as it's harder than standard
+
+                lastResults = results;
+
+                // Display Stats
+                const log = JSON.stringify(results.stats, null, 2);
+                document.getElementById('outputLog').innerText = log;
+
+                updateCharts([results]);
+
+                document.getElementById('downloadBtn').disabled = false;
+            } catch (e) {
+                document.getElementById('outputLog').innerText = "Error: " + e.message;
+                console.error(e);
+            }
+
+            btn.disabled = false;
+            btn.innerText = "Run Benchmark";
+        };
+
+        document.getElementById('downloadBtn').onclick = () => {
+            if (!lastResults) return;
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(lastResults, null, 2));
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href", dataStr);
+            downloadAnchorNode.setAttribute("download", "benchmark_results_" + Date.now() + ".json");
+            document.body.appendChild(downloadAnchorNode);
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+        };
+
+        function updateCharts(runs) {
+            const ctxTime = document.getElementById('timeChart').getContext('2d');
+            const ctxSuccess = document.getElementById('successChart').getContext('2d');
+
+            if (chartTime) chartTime.destroy();
+            if (chartSuccess) chartSuccess.destroy();
+
+            // Assuming single run for now, but scalable to comparison
+            const labels = runs.map((r, i) => `Run ${i + 1}`);
+
+            chartTime = new Chart(ctxTime, {
+                type: 'bar',
+                data: {
+                    labels: ['Current Heuristic'],
+                    datasets: [{
+                        label: 'Avg Time (ms)',
+                        data: [runs[0].stats.avgTime],
+                        backgroundColor: 'rgba(54, 162, 235, 0.5)'
+                    }]
+                }
+            });
+
+            chartSuccess = new Chart(ctxSuccess, {
+                type: 'bar',
+                data: {
+                    labels: ['Current Heuristic'],
+                    datasets: [{
+                        label: 'Success Rate (%)',
+                        data: [runs[0].stats.successRate],
+                        backgroundColor: 'rgba(75, 192, 192, 0.5)'
+                    }]
+                },
+                options: {
+                    scales: { y: { beginAtZero: true, max: 100 } }
+                }
+            });
+        }
+    </script>
+</body>
+
+</html>
