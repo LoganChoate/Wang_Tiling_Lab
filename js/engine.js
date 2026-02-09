@@ -158,3 +158,180 @@ export function getWeightedRandomCandidate(candidates, tileSet, weights, rand) {
     }
     return candidates[candidates.length - 1];
 }
+
+/**
+ * Solves the grid using Wave Function Collapse with Backtracking.
+ * @param {number} size - Grid size.
+ * @param {string} topology - 'plane' or 'torus'.
+ * @param {Array} tileSet - Array of tiles.
+ * @param {object} options - { maxBacktracks, seed }.
+ * @returns {object} { grid, success, steps, time, backtracks }
+ */
+export function solveWFC(size, topology, tileSet, options = {}) {
+    const start = performance.now();
+    const maxBacktracks = options.maxBacktracks || 10000;
+    const rand = seedPRNG(options.seed || Math.random().toString());
+
+    // Initialize Grid
+    let grid = Array.from({ length: size }, () => Array(size).fill(null));
+
+    // Stack for backtracking: { r, c, choices, choiceIdx }
+    // choices is a shuffled array of candidate indices for that cell.
+    let stack = [];
+
+    let steps = 0;
+    let backtracks = 0;
+
+    // Initial Step: Find first cell
+    let currentCell = findMinEntropyCell(grid, size, topology, tileSet, rand);
+
+    if (!currentCell) {
+        // Already full?
+        return { grid, success: true, steps, time: performance.now() - start, backtracks };
+    }
+
+    // Prepare first stack frame
+    let firstCandidates = getCandidates(currentCell.r, currentCell.c, grid, size, topology, tileSet);
+    // Shuffle candidates to ensure randomness
+    shuffleArray(firstCandidates, rand);
+
+    stack.push({
+        r: currentCell.r,
+        c: currentCell.c,
+        choices: firstCandidates,
+        choiceIdx: 0
+    });
+
+    while (stack.length > 0) {
+        if (backtracks > maxBacktracks) {
+            return { grid, success: false, steps, time: performance.now() - start, backtracks };
+        }
+
+        let frame = stack[stack.length - 1];
+
+        // If we exhausted choices for this cell, backtrack
+        if (frame.choiceIdx >= frame.choices.length) {
+            grid[frame.r][frame.c] = null; // Reset
+            stack.pop();
+            backtracks++;
+            continue;
+        }
+
+        // Apply choice
+        let tileIdx = frame.choices[frame.choiceIdx];
+        grid[frame.r][frame.c] = tileSet[tileIdx];
+        frame.choiceIdx++;
+        steps++;
+        let nextCell = findMinEntropyCell(grid, size, topology, tileSet, rand);
+        if (!nextCell) {
+            return { grid, success: true, steps, time: performance.now() - start, backtracks };
+        }
+        let nextCandidates = getCandidates(nextCell.r, nextCell.c, grid, size, topology, tileSet);
+        if (nextCandidates.length === 0) {
+            continue;
+        }
+
+        // OPTIMIZATION: 1-Step Lookahead (Arc Consistency)
+        const validCandidates = [];
+        for (const candIdx of nextCandidates) {
+            if (checkLookahead(nextCell.r, nextCell.c, candIdx, grid, size, topology, tileSet)) {
+                validCandidates.push(candIdx);
+            }
+        }
+
+        if (validCandidates.length === 0) {
+            continue; // All candidates lead to immediate death -> backtrack
+        }
+
+        // OPTIMIZATION: Least Constraining Value (LCV) Heuristic
+        const candidateScores = validCandidates.map(candIdx => {
+            grid[nextCell.r][nextCell.c] = tileSet[candIdx];
+            let freedom = 0;
+
+            // Calculate "freedom" (sum of valid options for all neighbors)
+            const coords = [];
+            if (topology === 'plane') {
+                if (nextCell.r > 0) coords.push({ r: nextCell.r - 1, c: nextCell.c });
+                if (nextCell.r < size - 1) coords.push({ r: nextCell.r + 1, c: nextCell.c });
+                if (nextCell.c > 0) coords.push({ r: nextCell.r, c: nextCell.c - 1 });
+                if (nextCell.c < size - 1) coords.push({ r: nextCell.r, c: nextCell.c + 1 });
+            } else {
+                const gridSize = size;
+                coords.push({ r: (nextCell.r - 1 + gridSize) % gridSize, c: nextCell.c });
+                coords.push({ r: (nextCell.r + 1) % gridSize, c: nextCell.c });
+                coords.push({ r: (nextCell.c - 1 + gridSize) % gridSize, c: nextCell.c });
+                coords.push({ r: (nextCell.c + 1) % gridSize, c: nextCell.c });
+            }
+
+            for (const coord of coords) {
+                if (grid[coord.r][coord.c] === null) {
+                    const opts = getCandidates(coord.r, coord.c, grid, size, topology, tileSet);
+                    freedom += opts.length;
+                }
+            }
+
+            grid[nextCell.r][nextCell.c] = null; // Backtrack
+            return { idx: candIdx, score: freedom + rand() * 0.001 }; // Add small random jitter to break ties
+        });
+
+        // Sort descending (higher freedom is better)
+        candidateScores.sort((a, b) => b.score - a.score);
+
+        const sortedCandidates = candidateScores.map(x => x.idx);
+
+        stack.push({
+            r: nextCell.r,
+            c: nextCell.c,
+            choices: sortedCandidates,
+            choiceIdx: 0
+        });
+    }
+    return { grid, success: false, steps, time: performance.now() - start, backtracks };
+}
+
+export function solveWFC(size, topology, tileSet, options = {}) {
+    const maxRetries = options.maxRetries ?? 10;
+    let totalSteps = 0;
+    let totalBacktracks = 0;
+    let totalTime = 0;
+
+    for (let i = 0; i < maxRetries; i++) {
+        // If options.seed is provided, we should probably ONLY run once unless we mutate the seed.
+        // If the user specifically accepted a seed, they might expect deterministic output.
+        // However, for "solving", we usually want success.
+        // Let's modify the seed for retries if one was provided.
+        const runOptions = { ...options };
+        if (i > 0) {
+            runOptions.seed = (options.seed || Math.random().toString()) + "_" + i;
+        }
+
+        const result = solveSingleWFC(size, topology, tileSet, runOptions);
+        totalSteps += result.steps;
+        totalBacktracks += result.backtracks;
+        totalTime += result.time;
+
+        if (result.success) {
+            result.steps = totalSteps;
+            result.backtracks = totalBacktracks;
+            result.time = totalTime;
+            return result; // Success!
+        }
+    }
+
+    // Failed after retries
+    return {
+        grid: Array.from({ length: size }, () => Array(size).fill(null)),
+        success: false,
+        steps: totalSteps,
+        time: totalTime,
+        backtracks: totalBacktracks
+    };
+}
+
+// Helper: Fisher-Yates shuffle
+function shuffleArray(array, rand) {
+    for (let i = array.length - 1; i > 0; i--) {
+        const j = Math.floor(rand() * (i + 1));
+        [array[i], array[j]] = [array[j], array[i]];
+    }
+}
